@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CipherAI</title>
+<meta name="description" content="CipherAI is a prototype that reads USPTO Office Actions on your own computer, shows the source of every field, and needs a person to approve.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Concept: a patent examiner's desk at night. The one accent is the highlighter mark that the product itself draws on the source line. */
+:root {
+  --bg: #0d1117;
+  --surface: #151b24;
+  --surface-2: #1b2330;
+  --line: #263041;
+  --fg: #e8ecf2;
+  --muted: #98a3b5;
+  --accent: #ffc83d;
+  --accent-ink: #1a1400;
+  --accent-soft: rgba(255, 200, 61, .22);
+  --paper: #f3f0e8;
+  --paper-ink: #1c1f26;
+  --paper-muted: #6b6f7a;
+  --ok: #4cc38a;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef1f5; --line: #d9dee6;
+    --fg: #11161f; --muted: #536073; --accent: #f2b705; --accent-ink: #1a1400;
+    --accent-soft: rgba(242, 183, 5, .30); --paper: #ffffff; --paper-ink: #1c1f26;
+    --paper-muted: #6b6f7a; --ok: #1a8a58; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef1f5; --line: #d9dee6;
+  --fg: #11161f; --muted: #536073; --accent: #f2b705; --accent-ink: #1a1400;
+  --accent-soft: rgba(242, 183, 5, .30); --paper: #ffffff; --paper-ink: #1c1f26;
+  --paper-muted: #6b6f7a; --ok: #1a8a58; color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+a { color: inherit; }
+
+/* nav */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; }
+.mark { font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; letter-spacing: -.01em; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+.mark i { width: 12px; height: 12px; background: var(--accent); border-radius: 2px; display: inline-block; transform: rotate(45deg); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 600 .95rem/1 var(--font-body); padding: 13px 20px; border-radius: 8px; text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-ghost { border-color: var(--line); color: var(--fg); background: transparent; }
+.btn-ghost:hover { border-color: var(--muted); }
+.btn:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.btn-sm { padding: 10px 16px; font-size: .88rem; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 56px; align-items: center; padding-block: 56px 72px; }
+.eyebrow { font: 500 .78rem/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; margin: 0 0 22px; }
+.eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.4rem, 5.4vw, 4.1rem); line-height: 1.02; letter-spacing: -.025em; margin: 0 0 22px; text-wrap: balance; }
+h1 .hl { background: linear-gradient(var(--accent-soft), var(--accent-soft)) no-repeat left 88% / 100% .42em; padding: 0 .06em; }
+.lede { font-size: 1.12rem; color: var(--muted); max-width: 54ch; margin: 0 0 30px; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.status { font: 400 .82rem/1.5 var(--font-mono); color: var(--muted); display: flex; align-items: center; gap: 10px; margin: 0; }
+.status b { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; flex: none; }
+
+/* hero demo */
+.demo { display: grid; gap: 14px; min-width: 0; }
+.demo-label { font: 500 .72rem/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; }
+.paper { background: var(--paper); color: var(--paper-ink); border-radius: 10px; padding: 20px 22px; font: 400 .86rem/1.9 var(--font-mono); border: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; }
+.paper .pg { display: flex; justify-content: space-between; color: var(--paper-muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+.paper .big { font: 700 .95rem/1.6 var(--font-mono); letter-spacing: .02em; margin: 6px 0; }
+.paper mark { color: inherit; background: linear-gradient(var(--accent), var(--accent)) no-repeat left center / 0 100%; padding: 1px 3px; border-radius: 3px; animation: sweep .9s .5s ease-out forwards; }
+.paper mark.m2 { animation-delay: 1.15s; }
+@keyframes sweep { to { background-size: 100% 100%; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; min-width: 0; }
+.card .k { font: 500 .72rem/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.card .date { font-family: var(--font-display); font-weight: 700; font-size: 2.1rem; line-height: 1.1; letter-spacing: -.02em; margin: 0 0 10px; }
+.calc { font: 400 .8rem/1.8 var(--font-mono); color: var(--muted); margin: 0; }
+.calc em { font-style: normal; color: var(--fg); }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tag { font: 500 .72rem/1 var(--font-mono); padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+
+/* sections */
+section { padding-block: 72px; border-top: 1px solid var(--line); }
+.sec-head { max-width: 62ch; margin-bottom: 40px; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.7rem, 3.4vw, 2.5rem); line-height: 1.1; letter-spacing: -.02em; margin: 0 0 14px; text-wrap: balance; }
+.sec-head p { color: var(--muted); margin: 0; font-size: 1.05rem; }
+.problem { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.4rem, 2.8vw, 2.1rem); line-height: 1.25; letter-spacing: -.015em; max-width: 30em; margin: 0; text-wrap: balance; }
+.problem span { color: var(--muted); }
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps li { counter-increment: s; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; min-width: 0; }
+.steps li::before { content: counter(s, decimal-leading-zero); font: 500 .8rem/1 var(--font-mono); color: var(--accent); display: block; margin-bottom: 18px; letter-spacing: .08em; }
+.steps h3, .grid h3 { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; margin: 0 0 8px; letter-spacing: -.01em; }
+.steps p, .grid p { margin: 0; color: var(--muted); font-size: .98rem; }
+
+.grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 20px; }
+.grid > div { grid-column: span 2; border-top: 1px solid var(--line); padding-top: 20px; min-width: 0; }
+.grid > div:nth-child(4), .grid > div:nth-child(5) { grid-column: span 3; }
+
+.tests { width: 100%; border-collapse: collapse; font-size: .98rem; }
+.tests th { text-align: left; font: 500 .72rem/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 16px 14px 0; border-bottom: 1px solid var(--line); }
+.tests td { padding: 18px 16px 18px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tests td:first-child { font-weight: 600; width: 38%; }
+.tests td:last-child { color: var(--muted); }
+.tests .res { color: var(--ok); font: 500 .8rem/1 var(--font-mono); margin-right: 8px; }
+.scroll-x { overflow-x: auto; }
+.note { font: 400 .82rem/1.6 var(--font-mono); color: var(--muted); margin: 22px 0 0; max-width: 70ch; }
+
+.access { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 40px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: clamp(24px, 4vw, 48px); }
+.access h2 { margin-bottom: 12px; }
+.access p { color: var(--muted); margin: 0 0 8px; }
+.access ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.access li { display: flex; gap: 12px; align-items: baseline; color: var(--muted); font-size: .98rem; }
+.access li::before { content: ""; width: 8px; height: 8px; background: var(--accent); border-radius: 2px; transform: rotate(45deg); flex: none; translate: 0 -1px; }
+#cta-note { font: 400 .85rem/1.5 var(--font-mono); color: var(--accent); margin: 14px 0 0; min-height: 1.3em; }
+
+footer { border-top: 1px solid var(--line); padding-block: 36px 48px; color: var(--muted); font-size: .88rem; display: grid; gap: 10px; }
+footer p { margin: 0; max-width: 78ch; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 32px 56px; }
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .grid > div, .grid > div:nth-child(4), .grid > div:nth-child(5) { grid-column: auto; }
+  .access { grid-template-columns: minmax(0, 1fr); }
+  section { padding-block: 52px; }
+}
+@media (max-width: 520px) {
+  .nav .btn-sm { padding: 9px 12px; }
+  .tests td:first-child { width: auto; }
+  .paper { padding: 16px; font-size: .78rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .paper mark { animation: none; background-size: 100% 100%; }
+}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="nav">
+    <a class="mark" href="#top" id="top"><i aria-hidden="true"></i>CipherAI</a>
+    <a class="btn btn-primary btn-sm" data-cta href="#early-access">Request early access</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <p class="eyebrow">For patent prosecution teams</p>
+        <h1>Every deadline, traced to its <span class="hl">source line</span>.</h1>
+        <p class="lede">CipherAI reads a USPTO Office Action on your own computer. Each field shows the exact quote and page it came from, the response date is calculated by code, and a person approves before anything is logged.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" data-cta href="#early-access">Request early access</a>
+          <a class="btn btn-ghost" href="#how">See how it works</a>
+        </div>
+        <p class="status"><b aria-hidden="true"></b>Prototype. Tested on synthetic documents.</p>
+      </div>
+
+      <div class="demo" aria-label="Example of the review screen, using a synthetic document">
+        <div class="demo-label"><span>Source document</span><span>Synthetic example</span></div>
+        <div class="paper">
+          <div class="pg"><span>Page 1</span><span>Office Action</span></div>
+          <div>Notification Date: August 28, 2026</div>
+          <div>Date Mailed: <mark>August 28, 2026</mark></div>
+          <div class="big">FINAL OFFICE ACTION</div>
+          <div>A SHORTENED STATUTORY PERIOD FOR REPLY IS SET TO EXPIRE <mark class="m2">THREE MONTHS</mark> FROM THE MAILING DATE</div>
+        </div>
+        <div class="card">
+          <p class="k">Preliminary response date</p>
+          <p class="date">2026-11-30</p>
+          <p class="calc"><em>2026-08-28 + 3 months = 2026-11-28 (Saturday)</em><br>Weekend, so the next Monday is used.</p>
+          <div class="tags"><span class="tag ok">Calculated by code</span><span class="tag">Attorney verification required</span></div>
+        </div>
+      </div>
+    </div>
+
+    <section id="problem">
+      <p class="problem">A missed Office Action deadline can cost a patent. <span>Yet the dates are still read by hand from long PDFs and typed into a docket.</span></p>
+    </section>
+
+    <section id="how">
+      <div class="sec-head">
+        <h2>From PDF to approved date in three steps</h2>
+        <p>Built for the person who has to be sure, not the person who has to be fast.</p>
+      </div>
+      <ol class="steps">
+        <li><h3>Read</h3><p>Upload the Office Action PDF. CipherAI extracts the document type, application number, mailing date and response period.</p></li>
+        <li><h3>Verify</h3><p>Open the source for any field. The exact quote and page appear, with the part used in the calculation highlighted.</p></li>
+        <li><h3>Approve</h3><p>A reviewer confirms each field, gives a reason for any edit, and approves. The decision is written to an audit log.</p></li>
+      </ol>
+    </section>
+
+    <section id="safe">
+      <div class="sec-head">
+        <h2>Designed to fail safely</h2>
+        <p>When CipherAI is unsure, it says so and hands the decision to a person.</p>
+      </div>
+      <div class="grid">
+        <div><h3>Source on every field</h3><p>Exact quote, page number and the highlighted value, so a date can be checked in seconds.</p></div>
+        <div><h3>Dates calculated by code</h3><p>The date is worked out by plain code, never guessed. Weekends roll to Monday, month-ends are handled, and the working is shown.</p></div>
+        <div><h3>Refuses to guess</h3><p>If a document shows two different mailing dates, or has no readable text, CipherAI returns no value and asks a person to check.</p></div>
+        <div><h3>A person decides</h3><p>Approval stays locked until each source has been opened. Every edit needs a reason.</p></div>
+        <div><h3>Stays on your computer</h3><p>In the current prototype the PDF is read locally and is not saved. Only an audit-log entry is written.</p></div>
+      </div>
+    </section>
+
+    <section id="tested">
+      <div class="sec-head">
+        <h2>We tried to break it first</h2>
+        <p>Five synthetic Office Actions, built around the cases that usually cause mistakes.</p>
+      </div>
+      <div class="scroll-x">
+        <table class="tests">
+          <thead><tr><th scope="col">Case</th><th scope="col">What CipherAI did</th></tr></thead>
+          <tbody>
+            <tr><td>Two different mailing dates in one document</td><td><span class="res">FLAGGED</span>No date chosen. A person is asked to check.</td></tr>
+            <tr><td>Deadline falls on a Saturday</td><td><span class="res">CORRECT</span>Moved to the next Monday, with the working shown.</td></tr>
+            <tr><td>Month-end date plus a weekend</td><td><span class="res">CORRECT</span>30 Nov 2026 plus three months gives 1 Mar 2027.</td></tr>
+            <tr><td>Scanned page with no text</td><td><span class="res">REFUSED</span>"No readable text." No values returned.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">All results are on synthetic documents. Public Office Actions are the next test.</p>
+    </section>
+
+    <section id="data">
+      <div class="sec-head">
+        <h2>Your data, your choice</h2>
+        <p>Client documents are confidential. CipherAI is built so you decide where they are processed.</p>
+      </div>
+      <div class="grid">
+        <div><h3>Local mode <span class="tag ok">Available in prototype</span></h3><p>The PDF is read on your own computer and is not uploaded or saved. Only the audit-log entry is written.</p></div>
+        <div><h3>Cloud mode <span class="tag">Planned, optional</span></h3><p>For firms that prefer it, with contractual data-handling terms agreed before any pilot. It is not built yet. Local stays the default.</p></div>
+        <div><h3>Sign-up rule</h3><p>We never ask for client or confidential documents. Early testing uses public Office Actions only.</p></div>
+      </div>
+      <p class="note">Data handling in any pilot will be put in writing first. We do not claim certifications we do not hold.</p>
+    </section>
+
+    <section id="next">
+      <div class="sec-head">
+        <h2>Where we are going</h2>
+        <p>Our aim: a trusted review layer for patent paperwork, where every fact an AI reads shows its evidence and a person stays in control. Everything below is planned, not built yet, and depends on what reviewers tell us.</p>
+      </div>
+      <div class="grid">
+        <div><h3>More document types</h3><p>Beyond the first Office Action types, so more of a docket can be checked the same way.</p></div>
+        <div><h3>Source beside the field</h3><p>The original PDF page shown next to each extracted value, for faster checking.</p></div>
+        <div><h3>Disagree, with a reason</h3><p>One click to flag a wrong value and say why, so errors are tracked.</p></div>
+        <div><h3>Fits your firm's process</h3><p>Security questionnaires and review workflows, set up before any pilot.</p></div>
+        <div><h3>Tested on real documents</h3><p>Public Office Actions next, with the results shared openly.</p></div>
+      </div>
+    </section>
+
+    <section id="early-access">
+      <div class="access">
+        <div>
+          <h2>Help us find what's wrong with it</h2>
+          <p>We are inviting a small group of patent attorneys, paralegals and docketing staff to try CipherAI on public documents and tell us where it falls short.</p>
+          <div class="cta-row" style="margin-top:24px;margin-bottom:0">
+            <a class="btn btn-primary" data-cta href="#early-access">Request early access</a>
+          </div>
+          <p id="cta-note" role="status"></p>
+        </div>
+        <ul>
+          <li>Takes two minutes to sign up</li>
+          <li>We never ask for client or confidential documents</li>
+          <li>Your feedback shapes what gets built next</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p><strong>CipherAI</strong> is a prototype. A preliminary response date is not a legal deadline and requires attorney verification. Extensions of time may be available.</p>
+    <p>CipherAI is not affiliated with or endorsed by the USPTO.</p>
+  </footer>
+</div>
+
+<script>
+/* Paste your sign-up form link between the quotes (a Google Form or Tally link). */
+const FORM_URL = "https://tally.so/r/Kppg58";
+
+(function () {
+  var note = document.getElementById("cta-note");
+  var links = document.querySelectorAll("[data-cta]");
+  links.forEach(function (a) {
+    if (FORM_URL) {
+      a.href = FORM_URL;
+      a.target = "_blank";
+      a.rel = "noopener";
+    } else {
+      a.addEventListener("click", function () {
+        if (note) note.textContent = "Sign-up form coming soon. Check back shortly.";
+      });
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
